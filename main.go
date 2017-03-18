@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
+	"net/smtp"
 	"os"
 	"regexp"
 	"strconv"
@@ -30,6 +31,10 @@ type Conf struct {
 	// separated by a comma.
 	Domain []string
 
+	// Recipient is the email address of the person to be alerted in case a new
+	// submission on a configured domain is detected.
+	Recipient string
+
 	SMTPLogin    string
 	SMTPPassword string
 	SMTPPort     string
@@ -40,23 +45,30 @@ func main() {
 	var err error
 	conf, err = parseConf()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, err.Error())
+		fmt.Fprintf(os.Stderr, err.Error()+"\n")
 		os.Exit(1)
 	}
 
-	for {
-		err = checkDomains()
+	if os.Getenv("TEST_EMAIL") == "true" {
+		err := sendDomainMessage(conf.Domain[0])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, err.Error())
-			goto wait
+			panic(err)
 		}
+	} else {
+		for {
+			err = checkDomains()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, err.Error()+"\n")
+				goto wait
+			}
 
-	wait:
-		// Add some random jitter just so that we're not requesting on a
-		// perfectly predictable schedule all the time.
-		sleepDuration := alertPeriod - time.Duration(rand.Intn(60))*time.Second
-		fmt.Printf("Sleeping for %v between runs\n", sleepDuration)
-		time.Sleep(sleepDuration)
+		wait:
+			// Add some random jitter just so that we're not requesting on a
+			// perfectly predictable schedule all the time.
+			sleepDuration := alertPeriod - time.Duration(rand.Intn(60))*time.Second
+			fmt.Printf("Sleeping for %v between runs\n", sleepDuration)
+			time.Sleep(sleepDuration)
+		}
 	}
 }
 
@@ -81,7 +93,11 @@ func checkDomains() error {
 			fmt.Printf("Found an article with age: %v\n", duration)
 
 			if duration <= alertPeriod {
-				fmt.Printf("ALERT! Article's age is below alert threshold.")
+				fmt.Printf("Article's age is below alert threshold; sending email")
+				err := sendDomainMessage(domain)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -115,7 +131,16 @@ func parseConf() (*Conf, error) {
 	if domain == "" {
 		return nil, fmt.Errorf("Need value for: DOMAIN")
 	}
+
 	conf.Domain = strings.Split(domain, ",")
+	if len(conf.Domain) < 1 {
+		return nil, fmt.Errorf("Need at least one value in: DOMAIN")
+	}
+
+	conf.Recipient = os.Getenv("RECIPIENT")
+	if conf.Recipient == "" {
+		return nil, fmt.Errorf("Need value for: RECIPIENT")
+	}
 
 	conf.SMTPLogin = os.Getenv("MAILGUN_SMTP_LOGIN")
 	if conf.SMTPLogin == "" {
@@ -194,4 +219,24 @@ func parseDurations(content string) ([]time.Duration, error) {
 		durations = append(durations, duration)
 	}
 	return durations, nil
+}
+
+func sendDomainMessage(domain string) error {
+	return sendEmail(
+		"New Hacker News submission for "+domain,
+		"New Hacker News submission for "+domain+". Please see:\n\n"+
+			"https://news.ycombinator.com/newest\n",
+	)
+}
+
+func sendEmail(subject, body string) error {
+	auth := smtp.PlainAuth("", conf.SMTPLogin, conf.SMTPPassword, conf.SMTPServer)
+
+	to := []string{conf.Recipient}
+	payload := []byte("To: " + conf.Recipient + "\r\n" +
+		"Subject: " + subject + "\r\n" +
+		"\r\n" + body + "\r\n")
+	return smtp.SendMail(
+		conf.SMTPServer+":"+conf.SMTPPort,
+		auth, "hncheck@mutelight.org", to, payload)
 }
