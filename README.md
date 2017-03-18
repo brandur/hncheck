@@ -19,4 +19,12 @@ go install
 forego start hncheck
 ```
 
+## Tests
+
+Run the test suite:
+
+``` sh
+go test
+```
+
 [mailgun]: https://mailgun.com
