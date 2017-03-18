@@ -18,46 +18,40 @@ const (
 )
 
 var (
+	conf *Conf
+
 	// Matches something like "1 minute ago" or "3 hours ago". Note we include
 	// some angle brackets to avoid false positives.
 	timeRegexp = regexp.MustCompile(`>([1-9]\d*) (\w+) ago<`)
 )
 
 type Conf struct {
+	// Domain is specified as DOMAIN and may included multiple domains to check
+	// separated by a comma.
 	Domain []string
+
+	SMTPLogin    string
+	SMTPPassword string
+	SMTPPort     string
+	SMTPServer   string
 }
 
 func main() {
-	conf, err := parseConf()
+	var err error
+	conf, err = parseConf()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, err.Error())
 		os.Exit(1)
 	}
 
 	for {
-		for _, domain := range conf.Domain {
-			url := fmt.Sprintf(hnDomainURL, domain)
-			respData, err := getHTTPData(url)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error())
-				continue
-			}
-
-			durations, err := parseDurations(string(respData))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error())
-				continue
-			}
-
-			for _, duration := range durations {
-				fmt.Printf("Found an article with age: %v\n", duration)
-
-				if duration <= alertPeriod {
-					fmt.Printf("ALERT! Article's age is below alert threshold.")
-				}
-			}
+		err = checkDomains()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, err.Error())
+			goto wait
 		}
 
+	wait:
 		// Add some random jitter just so that we're not requesting on a
 		// perfectly predictable schedule all the time.
 		sleepDuration := alertPeriod - time.Duration(rand.Intn(60))*time.Second
@@ -69,6 +63,31 @@ func main() {
 //
 // Helpers
 //
+
+func checkDomains() error {
+	for _, domain := range conf.Domain {
+		url := fmt.Sprintf(hnDomainURL, domain)
+		respData, err := getHTTPData(url)
+		if err != nil {
+			return err
+		}
+
+		durations, err := parseDurations(string(respData))
+		if err != nil {
+			return err
+		}
+
+		for _, duration := range durations {
+			fmt.Printf("Found an article with age: %v\n", duration)
+
+			if duration <= alertPeriod {
+				fmt.Printf("ALERT! Article's age is below alert threshold.")
+			}
+		}
+	}
+
+	return nil
+}
 
 func getHTTPData(url string) ([]byte, error) {
 	fmt.Printf("Requesting: %v\n", url)
@@ -97,6 +116,26 @@ func parseConf() (*Conf, error) {
 		return nil, fmt.Errorf("Need value for: DOMAIN")
 	}
 	conf.Domain = strings.Split(domain, ",")
+
+	conf.SMTPLogin = os.Getenv("MAILGUN_SMTP_LOGIN")
+	if conf.SMTPLogin == "" {
+		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_LOGIN")
+	}
+
+	conf.SMTPPassword = os.Getenv("MAILGUN_SMTP_PASSWORD")
+	if conf.SMTPPassword == "" {
+		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_PASSWORD")
+	}
+
+	conf.SMTPPort = os.Getenv("MAILGUN_SMTP_PORT")
+	if conf.SMTPPort == "" {
+		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_PORT")
+	}
+
+	conf.SMTPServer = os.Getenv("MAILGUN_SMTP_SERVER")
+	if conf.SMTPServer == "" {
+		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_SERVER")
+	}
 
 	return conf, nil
 }
