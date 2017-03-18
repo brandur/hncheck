@@ -26,6 +26,7 @@ var (
 	timeRegexp = regexp.MustCompile(`>([1-9]\d*) (\w+) ago<`)
 )
 
+// Conf holds configuration information for the program.
 type Conf struct {
 	// Domain is specified as DOMAIN and may included multiple domains to check
 	// separated by a comma.
@@ -222,8 +223,8 @@ func parseDurations(content string) ([]time.Duration, error) {
 
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			return nil, fmt.Errorf("Error while parsing number \"%s\": %v\n", num, err.Error())
-			continue
+			return nil, fmt.Errorf("Error while parsing number \"%v\": %v\n",
+				num, err.Error())
 		}
 
 		duration, err := parseDuration(num, unit)

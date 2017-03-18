@@ -47,7 +47,7 @@ func TestParseDurations(t *testing.T) {
 		t.Errorf("Expected durations length %v to equal %v.",
 			len(durations), len(expected))
 	}
-	for i, _ := range expected {
+	for i := range expected {
 		if durations[i] != expected[i] {
 			t.Errorf("Expected durations element (index %v) %v to equal %v.",
 				i, durations[i], expected[i])
