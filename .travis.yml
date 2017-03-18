@@ -2,3 +2,7 @@ language: go
 
 go:
   - 1.8
+
+notifications:
+  email:
+    on_success: never
