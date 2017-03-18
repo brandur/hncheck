@@ -3,6 +3,12 @@ language: go
 go:
   - 1.8
 
+before_install:
+  - go get -u github.com/golang/lint/golint
+
+script:
+  - go test -v ./... && go vet ./... && golint
+
 notifications:
   email:
     on_success: never
