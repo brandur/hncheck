@@ -214,6 +214,12 @@ func parseDuration(num int, unit string) (time.Duration, error) {
 
 func parseDurations(content string) ([]time.Duration, error) {
 	var durations []time.Duration
+
+	// We identify articles purely by looking at the ages under the
+	// domain-specific list. This isn't very robust, and given consistently bad
+	// results it'd be a good idea to revisit it, but so far in practice it
+	// seems to have yielded pretty good results, so I'll stick with it for
+	// now.
 	matches := timeRegexp.FindAllStringSubmatch(content, -1)
 
 	for _, match := range matches {
