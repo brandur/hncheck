@@ -37,41 +37,19 @@ func main() {
 	for {
 		for _, domain := range conf.Domain {
 			url := fmt.Sprintf(hnDomainURL, domain)
-			fmt.Printf("Requesting: %v\n", url)
-
-			resp, err := http.Get(url)
+			respData, err := getHTTPData(url)
 			if err != nil {
-				fmt.Printf("Error while requesting \"%s\": %s\n", url, err.Error())
-				continue
-			}
-			if resp.StatusCode != 200 {
-				fmt.Printf("Bad status while requesting \"%s\": %v\n", url, resp.StatusCode)
+				fmt.Fprintf(os.Stderr, err.Error())
 				continue
 			}
 
-			respBytes, err := ioutil.ReadAll(resp.Body)
+			durations, err := parseDurations(string(respData))
 			if err != nil {
-				fmt.Printf("Error while reading response from \"%s\": %v\n", url, err.Error())
+				fmt.Fprintf(os.Stderr, err.Error())
 				continue
 			}
 
-			matches := timeRegexp.FindAllStringSubmatch(string(respBytes), -1)
-			for _, match := range matches {
-				numStr := match[1]
-				unit := match[2]
-
-				num, err := strconv.Atoi(numStr)
-				if err != nil {
-					fmt.Printf("Error while parsing number \"%s\": %v\n", num, err.Error())
-					continue
-				}
-
-				duration, err := parseDuration(num, unit)
-				if err != nil {
-					fmt.Printf("Error while parsing duration: %v\n", err.Error())
-					continue
-				}
-
+			for _, duration := range durations {
 				fmt.Printf("Found an article with age: %v\n", duration)
 
 				if duration <= alertPeriod {
@@ -91,6 +69,25 @@ func main() {
 //
 // Helpers
 //
+
+func getHTTPData(url string) ([]byte, error) {
+	fmt.Printf("Requesting: %v\n", url)
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("Error while requesting \"%s\": %s\n", url, err.Error())
+	}
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("Bad status while requesting \"%s\": %v\n", url, resp.StatusCode)
+	}
+
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("Error while reading response from \"%s\": %v\n", url, err.Error())
+	}
+
+	return respBytes, nil
+}
 
 func parseConf() (*Conf, error) {
 	conf := &Conf{}
@@ -134,4 +131,28 @@ func parseDuration(num int, unit string) (time.Duration, error) {
 	}
 
 	return 0 * time.Second, fmt.Errorf("Couldn't parse duration: %v %v", num, unit)
+}
+
+func parseDurations(content string) ([]time.Duration, error) {
+	var durations []time.Duration
+	matches := timeRegexp.FindAllStringSubmatch(content, -1)
+
+	for _, match := range matches {
+		numStr := match[1]
+		unit := match[2]
+
+		num, err := strconv.Atoi(numStr)
+		if err != nil {
+			return nil, fmt.Errorf("Error while parsing number \"%s\": %v\n", num, err.Error())
+			continue
+		}
+
+		duration, err := parseDuration(num, unit)
+		if err != nil {
+			return nil, fmt.Errorf("Error while parsing duration: %v\n", err.Error())
+		}
+
+		durations = append(durations, duration)
+	}
+	return durations, nil
 }
