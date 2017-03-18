@@ -184,28 +184,22 @@ func parseDuration(num int, unit string) (time.Duration, error) {
 	// So I'm pretty sure HN only goes from minutes to days units, but just
 	// handle everything in case that changes at some point.
 	switch unit {
-	case "second":
-	case "seconds":
+	case "second", "seconds":
 		return time.Duration(num) * time.Second, nil
 
-	case "minute":
-	case "minutes":
+	case "minute", "minutes":
 		return time.Duration(num) * time.Minute, nil
 
-	case "hour":
-	case "hours":
+	case "hour", "hours":
 		return time.Duration(num) * time.Hour, nil
 
-	case "day":
-	case "days":
+	case "day", "days":
 		return time.Duration(num) * time.Hour * 24, nil
 
-	case "month":
-	case "months":
+	case "month", "months":
 		return time.Duration(num) * time.Hour * 24 * 30, nil
 
-	case "year":
-	case "years":
+	case "year", "years":
 		return time.Duration(num) * time.Hour * 24 * 365, nil
 	}
 
