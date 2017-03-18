@@ -31,6 +31,10 @@ type Conf struct {
 	// separated by a comma.
 	Domain []string
 
+	// Loop determines whether the program runs continuous in a loop. It
+	// defaults to true. If false, it runs once and exits.
+	Loop bool
+
 	// Recipient is the email address of the person to be alerted in case a new
 	// submission on a configured domain is detected.
 	Recipient string
@@ -64,6 +68,10 @@ func main() {
 			}
 
 		wait:
+			if !conf.Loop {
+				break
+			}
+
 			// Add some random jitter just so that we're not requesting on a
 			// perfectly predictable schedule all the time.
 			sleepDuration := alertPeriod - time.Duration(rand.Intn(60))*time.Second
@@ -126,7 +134,9 @@ func getHTTPData(url string) ([]byte, error) {
 }
 
 func parseConf() (*Conf, error) {
-	conf := &Conf{}
+	conf := &Conf{
+		Loop: true,
+	}
 
 	domain := os.Getenv("DOMAIN")
 	if domain == "" {
@@ -136,6 +146,10 @@ func parseConf() (*Conf, error) {
 	conf.Domain = strings.Split(domain, ",")
 	if len(conf.Domain) < 1 {
 		return nil, fmt.Errorf("Need at least one value in: DOMAIN")
+	}
+
+	if os.Getenv("LOOP") == "false" {
+		conf.Loop = false
 	}
 
 	conf.Recipient = os.Getenv("RECIPIENT")
