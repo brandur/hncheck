@@ -15,8 +15,8 @@ you'll have to add yourself as an authorized recipient).
 cp .env.sample .env
 # edit .env
 
-go build
-forego run ./hncheck
+go install
+forego start hncheck
 ```
 
 [mailgun]: https://mailgun.com
