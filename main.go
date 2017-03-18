@@ -54,6 +54,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		fmt.Printf("Test email sent: %s\n", conf.Recipient)
 	} else {
 		for {
 			err = checkDomains()
@@ -142,24 +143,24 @@ func parseConf() (*Conf, error) {
 		return nil, fmt.Errorf("Need value for: RECIPIENT")
 	}
 
-	conf.SMTPLogin = os.Getenv("MAILGUN_SMTP_LOGIN")
+	conf.SMTPLogin = os.Getenv("SMTP_LOGIN")
 	if conf.SMTPLogin == "" {
-		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_LOGIN")
+		return nil, fmt.Errorf("Need value for: SMTP_LOGIN")
 	}
 
-	conf.SMTPPassword = os.Getenv("MAILGUN_SMTP_PASSWORD")
+	conf.SMTPPassword = os.Getenv("SMTP_PASSWORD")
 	if conf.SMTPPassword == "" {
-		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_PASSWORD")
+		return nil, fmt.Errorf("Need value for: SMTP_PASSWORD")
 	}
 
-	conf.SMTPPort = os.Getenv("MAILGUN_SMTP_PORT")
+	conf.SMTPPort = os.Getenv("SMTP_PORT")
 	if conf.SMTPPort == "" {
-		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_PORT")
+		return nil, fmt.Errorf("Need value for: SMTP_PORT")
 	}
 
-	conf.SMTPServer = os.Getenv("MAILGUN_SMTP_SERVER")
+	conf.SMTPServer = os.Getenv("SMTP_SERVER")
 	if conf.SMTPServer == "" {
-		return nil, fmt.Errorf("Need value for: MAILGUN_SMTP_SERVER")
+		return nil, fmt.Errorf("Need value for: SMTP_SERVER")
 	}
 
 	return conf, nil
@@ -223,8 +224,8 @@ func parseDurations(content string) ([]time.Duration, error) {
 
 func sendDomainMessage(domain string) error {
 	return sendEmail(
-		"New Hacker News submission for "+domain,
-		"New Hacker News submission for "+domain+". Please see:\n\n"+
+		"New HN submission for \""+domain+"\"",
+		"New HN submission for \""+domain+"\". Please see:\n\n"+
 			"https://news.ycombinator.com/newest\n",
 	)
 }
