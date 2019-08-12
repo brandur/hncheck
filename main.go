@@ -120,15 +120,15 @@ func getHTTPData(url string) ([]byte, error) {
 
 	resp, err := http.Get(url)
 	if err != nil {
-		return nil, fmt.Errorf("Error while requesting \"%s\": %s\n", url, err.Error())
+		return nil, fmt.Errorf("error while requesting \"%s\": %s", url, err.Error())
 	}
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("Bad status while requesting \"%s\": %v\n", url, resp.StatusCode)
+		return nil, fmt.Errorf("bad status while requesting \"%s\": %v", url, resp.StatusCode)
 	}
 
 	respBytes, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("Error while reading response from \"%s\": %v\n", url, err.Error())
+		return nil, fmt.Errorf("error while reading response from \"%s\": %v", url, err.Error())
 	}
 
 	return respBytes, nil
@@ -223,13 +223,13 @@ func parseDurations(content string) ([]time.Duration, error) {
 
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			return nil, fmt.Errorf("Error while parsing number \"%v\": %v\n",
+			return nil, fmt.Errorf("error while parsing number \"%v\": %v",
 				num, err.Error())
 		}
 
 		duration, err := parseDuration(num, unit)
 		if err != nil {
-			return nil, fmt.Errorf("Error while parsing duration: %v\n", err.Error())
+			return nil, fmt.Errorf("error while parsing duration: %v", err.Error())
 		}
 
 		durations = append(durations, duration)
