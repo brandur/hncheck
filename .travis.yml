@@ -9,7 +9,7 @@ before_install:
 script:
   - go test -v ./... &&
     go vet ./...&&
-    golint ./... &&
+    golint -set_exit_status ./... &&
     scripts/check_gofmt.sh
 
 notifications:
