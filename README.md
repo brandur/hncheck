@@ -1,4 +1,4 @@
-# hncheck [![Build Status](https://travis-ci.org/brandur/hncheck.svg?branch=master)](https://travis-ci.org/brandur/hncheck)
+# hncheck [![Build Status](https://github.com/brandur/hncheck/workflows/hncheck%20CI/badge.svg)](https://github.com/brandur/hncheck/actions)
 
 A very simple app that checks to see if something under one
 of your domains has been submitted to HN, and emails you if
