@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	alertPeriod = 12 * time.Minute
+	alertPeriod = 20 * time.Minute
 	hnDomainURL = "https://news.ycombinator.com/from?site=%s"
 )
 
