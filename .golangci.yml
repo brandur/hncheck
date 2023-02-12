@@ -1,0 +1,61 @@
+linters:
+  disable:
+    # obnoxious
+    - cyclop
+    - dupl
+    - exhaustruct
+    - exhaustivestruct
+    - forcetypeassert
+    - funlen
+    - gochecknoinits
+    - gochecknoglobals
+    - gocognit
+    - gocyclo
+    - godox
+    - goerr113
+    - gomnd
+    - lll
+    - nlreturn
+    - paralleltest
+    - testpackage
+    - wsl
+    - varnamelen
+
+    # buggy
+    - execinquery
+
+    # deprecated
+    - deadcode
+    - golint
+    - ifshort
+    - interfacer
+    - maligned
+    - nosnakecase
+    - scopelint
+    - structcheck
+    - varcheck
+  enable-all: true
+
+linters-settings:
+  forbidigo:
+    forbid:
+      - '^errors\.Wrap$'
+      - '^errors\.Wrapf$'
+      # - '^fmt\.Errorf$'
+  gci:
+    sections:
+      - Standard
+      - Default
+      - Prefix(github.com/brandur)
+
+  gocritic:
+    disabled-checks:
+      - commentFormatting
+
+  gosec:
+    excludes:
+      - G203
+
+  wrapcheck:
+    ignorePackageGlobs:
+      - github.com/brandur/*
