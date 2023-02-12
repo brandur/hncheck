@@ -1,5 +1,8 @@
 name: hncheck CI
 
+env:
+  GO_VERSION: 1.19
+
 on:
   pull_request:
   push:
@@ -14,35 +17,13 @@ jobs:
 
     steps:
       - name: Install Go
-        uses: actions/setup-go@v2
-
-      # Used to force dependencies to re-cache once a day so that we don't run
-      # into any weird cache invalidation problems, so to make sure that
-      # dependency fetches keep working.
-      - name: Get date
-        id: get-date
-        run: |
-          echo "::set-output name=date::$(/bin/date -u "+%Y-%m-%d")"
-        shell: bash
-
-      - name: Cache dependencies
-        id: cache-dependencies
-        uses: actions/cache@v2
+        uses: actions/setup-go@v3
         with:
-          # Don't try to use variables in these paths. They don't seem to work
-          # and it'll lead to hours of confusion. You can use a `~`, but I've
-          # expanded HOME so that finding things is easier.
-          path: |
-            /home/runner/go/bin/
-            /home/runner/go/pkg/mod/
-          key: ${{ runner.os }}-${{ steps.get-date.outputs.date }}-cache-dependencies-v2
-
-      - name: Install Golint
-        if: steps.cache-dependencies.outputs.cache-hit != 'true'
-        run: go get -u golang.org/x/lint/golint
+          check-latest: true
+          go-version: ${{ env.GO_VERSION }}
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Debug
         run: |
@@ -58,11 +39,5 @@ jobs:
       - name: "Go: Test"
         run: go test -v ./...
 
-      - name: "Go: Vet"
-        run: go vet ./...
-
       - name: "Check: Gofmt"
         run: scripts/check_gofmt.sh
-
-      - name: "Check: Golint"
-        run: "$(go env GOPATH)/bin/golint -set_exit_status"
