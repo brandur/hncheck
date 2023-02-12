@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
+	"crypto/rand"
 	"fmt"
-	"io/ioutil"
-	"math/rand"
+	"io"
+	"math/big"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -54,15 +56,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx := context.Background()
+
 	if os.Getenv("TEST_EMAIL") == "true" {
-		err := sendDomainMessage(conf.Domain[0])
+		err := sendDomainMessage(ctx, conf.Domain[0])
 		if err != nil {
 			panic(err)
 		}
 		fmt.Printf("Test email sent: %s\n", conf.Recipient)
 	} else {
 		for {
-			err = checkDomains()
+			err = checkDomains(ctx)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, err.Error()+"\n")
 				goto wait
@@ -75,7 +79,7 @@ func main() {
 
 			// Add some random jitter just so that we're not requesting on a
 			// perfectly predictable schedule all the time.
-			sleepDuration := alertPeriod - time.Duration(rand.Intn(60))*time.Second
+			sleepDuration := alertPeriod - time.Duration(randIntn(60))*time.Second
 			fmt.Printf("Sleeping for %v between runs\n", sleepDuration)
 			time.Sleep(sleepDuration)
 		}
@@ -86,10 +90,10 @@ func main() {
 // Helpers
 //
 
-func checkDomains() error {
+func checkDomains(ctx context.Context) error {
 	for _, domain := range conf.Domain {
 		url := fmt.Sprintf(hnDomainURL, domain)
-		respData, err := getHTTPData(url)
+		respData, err := getHTTPData(ctx, url)
 		if err != nil {
 			return err
 		}
@@ -104,7 +108,7 @@ func checkDomains() error {
 
 			if duration <= alertPeriod {
 				fmt.Printf("Article's age is below alert threshold; sending email")
-				err := sendDomainMessage(domain)
+				err := sendDomainMessage(ctx, domain)
 				if err != nil {
 					return err
 				}
@@ -115,23 +119,38 @@ func checkDomains() error {
 	return nil
 }
 
-func getHTTPData(url string) ([]byte, error) {
+func getHTTPData(ctx context.Context, url string) ([]byte, error) {
 	fmt.Printf("Requesting: %v\n", url)
 
-	resp, err := http.Get(url)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("error while requesting \"%s\": %s", url, err.Error())
-	}
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("bad status while requesting \"%s\": %v", url, resp.StatusCode)
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	respBytes, err := ioutil.ReadAll(resp.Body)
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error while reading response from \"%s\": %v", url, err.Error())
+		return nil, fmt.Errorf("error while requesting %q: %w", url, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("bad status while requesting %q: %v", url, resp.StatusCode)
+	}
+
+	respBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error while reading response from %q: %w", url, err)
 	}
 
 	return respBytes, nil
+}
+
+type MissingEnvError struct {
+	EnvName string
+}
+
+func (e MissingEnvError) Error() string {
+	return "missing environment value for: " + e.EnvName
 }
 
 func parseConf() (*Conf, error) {
@@ -141,12 +160,12 @@ func parseConf() (*Conf, error) {
 
 	domain := os.Getenv("DOMAIN")
 	if domain == "" {
-		return nil, fmt.Errorf("Need value for: DOMAIN")
+		return nil, &MissingEnvError{"DOMAIN"}
 	}
 
 	conf.Domain = strings.Split(domain, ",")
 	if len(conf.Domain) < 1 {
-		return nil, fmt.Errorf("Need at least one value in: DOMAIN")
+		return nil, fmt.Errorf("need at least one value in: DOMAIN")
 	}
 
 	if os.Getenv("LOOP") == "false" {
@@ -155,27 +174,27 @@ func parseConf() (*Conf, error) {
 
 	conf.Recipient = os.Getenv("RECIPIENT")
 	if conf.Recipient == "" {
-		return nil, fmt.Errorf("Need value for: RECIPIENT")
+		return nil, &MissingEnvError{"RECIPIENT"}
 	}
 
 	conf.SMTPLogin = os.Getenv("SMTP_LOGIN")
 	if conf.SMTPLogin == "" {
-		return nil, fmt.Errorf("Need value for: SMTP_LOGIN")
+		return nil, &MissingEnvError{"SMTP_LOGIN"}
 	}
 
 	conf.SMTPPassword = os.Getenv("SMTP_PASSWORD")
 	if conf.SMTPPassword == "" {
-		return nil, fmt.Errorf("Need value for: SMTP_PASSWORD")
+		return nil, &MissingEnvError{"SMTP_PASSWORD"}
 	}
 
 	conf.SMTPPort = os.Getenv("SMTP_PORT")
 	if conf.SMTPPort == "" {
-		return nil, fmt.Errorf("Need value for: SMTP_PORT")
+		return nil, &MissingEnvError{"SMTP_PORT"}
 	}
 
 	conf.SMTPServer = os.Getenv("SMTP_SERVER")
 	if conf.SMTPServer == "" {
-		return nil, fmt.Errorf("Need value for: SMTP_SERVER")
+		return nil, &MissingEnvError{"SMTP_SERVER"}
 	}
 
 	return conf, nil
@@ -204,12 +223,10 @@ func parseDuration(num int, unit string) (time.Duration, error) {
 		return time.Duration(num) * time.Hour * 24 * 365, nil
 	}
 
-	return 0 * time.Second, fmt.Errorf("Couldn't parse duration: %v %v", num, unit)
+	return 0 * time.Second, fmt.Errorf("couldn't parse duration: %v %v", num, unit)
 }
 
 func parseDurations(content string) ([]time.Duration, error) {
-	var durations []time.Duration
-
 	// We identify articles purely by looking at the ages under the
 	// domain-specific list. This isn't very robust, and given consistently bad
 	// results it'd be a good idea to revisit it, but so far in practice it
@@ -217,42 +234,57 @@ func parseDurations(content string) ([]time.Duration, error) {
 	// now.
 	matches := timeRegexp.FindAllStringSubmatch(content, -1)
 
-	for _, match := range matches {
+	durations := make([]time.Duration, len(matches))
+
+	for i, match := range matches {
 		numStr := match[1]
 		unit := match[2]
 
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			return nil, fmt.Errorf("error while parsing number \"%v\": %v",
-				num, err.Error())
+			return nil, fmt.Errorf("error while parsing number %q: %w", num, err)
 		}
 
 		duration, err := parseDuration(num, unit)
 		if err != nil {
-			return nil, fmt.Errorf("error while parsing duration: %v", err.Error())
+			return nil, fmt.Errorf("error while parsing duration: %w", err)
 		}
 
-		durations = append(durations, duration)
+		durations[i] = duration
 	}
 	return durations, nil
 }
 
-func sendDomainMessage(domain string) error {
+func randIntn(max int) int {
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		panic(err)
+	}
+	return int(n.Int64())
+}
+
+func sendDomainMessage(ctx context.Context, domain string) error {
 	return sendEmail(
+		ctx,
 		"New HN submission for \""+domain+"\"",
 		"New HN submission for \""+domain+"\". Please see:\n\n"+
 			"https://news.ycombinator.com/newest\n",
 	)
 }
 
-func sendEmail(subject, body string) error {
+func sendEmail(_ context.Context, subject, body string) error {
 	auth := smtp.PlainAuth("", conf.SMTPLogin, conf.SMTPPassword, conf.SMTPServer)
 
 	to := []string{conf.Recipient}
 	payload := []byte("To: " + conf.Recipient + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"\r\n" + body + "\r\n")
-	return smtp.SendMail(
+	err := smtp.SendMail(
 		conf.SMTPServer+":"+conf.SMTPPort,
 		auth, "hncheck@mutelight.org", to, payload)
+	if err != nil {
+		return fmt.Errorf("error sending mail: %w", err)
+	}
+
+	return nil
 }
