@@ -1,0 +1,48 @@
+name: hncheck CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+  schedule:
+    # once a day at 08:00
+    - cron: "0 8 * * *"
+
+jobs:
+  golangci-lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: "Check: golangci-lint"
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.10.1
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "stable"
+          check-latest: true
+
+      - name: Debug
+        run: |
+          echo "github.ref=${{ github.ref }}"
+          echo "go env GOPATH=$(go env GOPATH)"
+          echo "pwd=$(pwd)"
+          echo "HOME=${HOME}"
+          echo "GITHUB_WORKSPACE=${GITHUB_WORKSPACE}"
+
+      - name: "Go: Test"
+        run: go test -v ./...

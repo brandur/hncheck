@@ -2,10 +2,10 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
+	"errors"
 	"fmt"
 	"io"
-	"math/big"
+	"math/rand/v2"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -21,7 +21,7 @@ const (
 )
 
 var (
-	conf *Conf
+	conf *Conf //nolint:gochecknoglobals
 
 	// Matches something like "1 minute ago" or "3 hours ago". Note we include
 	// some angle brackets to avoid false positives.
@@ -52,7 +52,7 @@ func main() {
 	var err error
 	conf, err = parseConf()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, err.Error()+"\n")
+		fmt.Fprintf(os.Stderr, "%s\n", err)
 		os.Exit(1)
 	}
 
@@ -68,7 +68,7 @@ func main() {
 		for {
 			err = checkDomains(ctx)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, err.Error()+"\n")
+				fmt.Fprintf(os.Stderr, "%s\n", err)
 				goto wait
 			}
 
@@ -79,7 +79,7 @@ func main() {
 
 			// Add some random jitter just so that we're not requesting on a
 			// perfectly predictable schedule all the time.
-			sleepDuration := alertPeriod - time.Duration(randIntn(60))*time.Second
+			sleepDuration := alertPeriod - time.Duration(rand.IntN(60))*time.Second
 			fmt.Printf("Sleeping for %v between runs\n", sleepDuration)
 			time.Sleep(sleepDuration)
 		}
@@ -127,11 +127,14 @@ func getHTTPData(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	// Gosec flags this with "G704: SSRF via taint analysis", but neither its
+	// error or website provides even a whiff of what it means by this or a
+	// suggested remediation.
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("error while requesting %q: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("bad status while requesting %q: %v", url, resp.StatusCode)
@@ -165,7 +168,7 @@ func parseConf() (*Conf, error) {
 
 	conf.Domain = strings.Split(domain, ",")
 	if len(conf.Domain) < 1 {
-		return nil, fmt.Errorf("need at least one value in: DOMAIN")
+		return nil, errors.New("need at least one value in: DOMAIN")
 	}
 
 	if os.Getenv("LOOP") == "false" {
@@ -242,7 +245,7 @@ func parseDurations(content string) ([]time.Duration, error) {
 
 		num, err := strconv.Atoi(numStr)
 		if err != nil {
-			return nil, fmt.Errorf("error while parsing number %q: %w", num, err)
+			return nil, fmt.Errorf("error while parsing number %d: %w", num, err)
 		}
 
 		duration, err := parseDuration(num, unit)
@@ -253,14 +256,6 @@ func parseDurations(content string) ([]time.Duration, error) {
 		durations[i] = duration
 	}
 	return durations, nil
-}
-
-func randIntn(max int) int {
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
-	if err != nil {
-		panic(err)
-	}
-	return int(n.Int64())
 }
 
 func sendDomainMessage(ctx context.Context, domain string) error {
@@ -275,13 +270,13 @@ func sendDomainMessage(ctx context.Context, domain string) error {
 func sendEmail(_ context.Context, subject, body string) error {
 	auth := smtp.PlainAuth("", conf.SMTPLogin, conf.SMTPPassword, conf.SMTPServer)
 
-	to := []string{conf.Recipient}
+	recipients := []string{conf.Recipient}
 	payload := []byte("To: " + conf.Recipient + "\r\n" +
 		"Subject: " + subject + "\r\n" +
 		"\r\n" + body + "\r\n")
 	err := smtp.SendMail(
 		conf.SMTPServer+":"+conf.SMTPPort,
-		auth, "hncheck@mutelight.org", to, payload)
+		auth, "hncheck@mutelight.org", recipients, payload)
 	if err != nil {
 		return fmt.Errorf("error sending mail: %w", err)
 	}

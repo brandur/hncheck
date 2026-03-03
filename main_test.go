@@ -6,6 +6,8 @@ import (
 )
 
 func TestParseDuration(t *testing.T) {
+	t.Parallel()
+
 	var duration, expected time.Duration
 	var err error
 
@@ -38,6 +40,8 @@ func TestParseDuration(t *testing.T) {
 }
 
 func TestParseDurations(t *testing.T) {
+	t.Parallel()
+
 	durations, err := parseDurations(domainHTML)
 	if err != nil {
 		t.Errorf("Expected not to return an error (was \"%v\").", err)
@@ -60,7 +64,7 @@ func TestParseDurations(t *testing.T) {
 //
 
 // This is just a random sampling pulled from a domain-specific HN page.
-var domainHTML = `
+const domainHTML = `
         <span class="score" id="score_13877867">2 points</span> by <a href="user?id=mooreds" class="hnuser">mooreds</a> <span class="age"><a href="item?id=13877867">3 days ago</a></span> <span id="unv_13877867"></span> | <a href="flag?id=13877867&amp;auth=6872af1bbe300db8892d0032ac5a516312b40846&amp;goto=from%3Fsite%3Dbrandur.org">flag</a> | <a href="https://hn.algolia.com/?query=AWS%20Islands&sort=byDate&dateRange=all&type=story&storyText=false&prefix&page=0" class="hnpast">past</a> | <a href="https://www.google.com/search?q=AWS%20Islands">web</a> | <a href="item?id=13877867">discuss</a>              </td></tr>
       <tr class="spacer" style="height:5px"></tr>
                 <tr class='athing' id='13845842'>
