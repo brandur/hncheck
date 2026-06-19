@@ -223,7 +223,7 @@ func TestParseNewestSubmissionDurations(t *testing.T) {
 		t.Errorf("Expected not to return an error (was \"%v\").", err)
 	}
 
-	expectedBrandurDurations := []time.Duration{3 * time.Minute, 2 * time.Hour}
+	expectedBrandurDurations := []time.Duration{0 * time.Minute, 2 * time.Hour}
 	brandurDurations := durationsByDomain["brandur.org"]
 	if len(brandurDurations) != len(expectedBrandurDurations) {
 		t.Fatalf("Expected brandur.org durations length %v to equal %v.",
@@ -250,17 +250,61 @@ func TestParseNewestSubmissionDurations(t *testing.T) {
 	}
 }
 
+func TestParseNewestSubmissionDurationsHandlesMarkupFallbacks(t *testing.T) {
+	t.Parallel()
+
+	durationsByDomain, err := parseNewestSubmissionDurations(newestChangedHTML, []string{
+		"brandur.org",
+		"example.com",
+	})
+	if err != nil {
+		t.Errorf("Expected not to return an error (was \"%v\").", err)
+	}
+
+	expectedBrandurDurations := []time.Duration{7 * time.Minute}
+	brandurDurations := durationsByDomain["brandur.org"]
+	if len(brandurDurations) != len(expectedBrandurDurations) {
+		t.Fatalf("Expected brandur.org durations length %v to equal %v.",
+			len(brandurDurations), len(expectedBrandurDurations))
+	}
+	for i, expectedDuration := range expectedBrandurDurations {
+		if brandurDurations[i] != expectedDuration {
+			t.Errorf("Expected brandur.org durations element (index %v) %v to equal %v.",
+				i, brandurDurations[i], expectedDuration)
+		}
+	}
+
+	expectedExampleDurations := []time.Duration{8 * time.Minute}
+	exampleDurations := durationsByDomain["example.com"]
+	if len(exampleDurations) != len(expectedExampleDurations) {
+		t.Fatalf("Expected example.com durations length %v to equal %v.",
+			len(exampleDurations), len(expectedExampleDurations))
+	}
+	for i, expectedDuration := range expectedExampleDurations {
+		if exampleDurations[i] != expectedDuration {
+			t.Errorf("Expected example.com durations element (index %v) %v to equal %v.",
+				i, exampleDurations[i], expectedDuration)
+		}
+	}
+}
+
 //
 // Data
 //
 
 // This is a minimal sampling of current and older HN /newest row structures.
 const newestHTML = `
+<!doctype html>
+<html>
+<body>
+<table id='hnmain'>
+<tr><td>
+<table>
 <tr class='athing submission' id='1'>
   <td class='title'><span class='titleline'><a href='https://brandur.org/new-post'>New Post</a><span class='sitebit comhead'> (<a href='from?site=brandur.org'><span class='sitestr'>brandur.org</span></a>)</span></span></td>
 </tr>
 <tr>
-  <td colspan='2'></td><td class='subtext'><span class='subline'><span class='age'><a href='item?id=1'>3 minutes ago</a></span></span></td>
+  <td colspan='2'></td><td class='subtext'><span class='subline'><span class='age'><a href='item?id=1'>0 minutes ago</a></span></span></td>
 </tr>
 <tr class='spacer' style='height:5px'></tr>
 <tr class='athing submission' id='2'>
@@ -290,6 +334,46 @@ const newestHTML = `
 <tr>
   <td colspan='2'></td><td class='subtext'><span class='subline'><span class='age'><a href='item?id=5'>2 hours ago</a></span></span></td>
 </tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
+`
+
+const newestChangedHTML = `
+<!doctype html>
+<html>
+<body>
+<table id='hnmain'>
+<tr><td>
+<table>
+<tr class='story-row'>
+  <td>
+    <a href='https://docs.brandur.org/new-post'>Docs Post</a>
+    <a href='from?site=docs.brandur.org'><span class='site-domain'>docs.brandur.org</span></a>
+  </td>
+</tr>
+<tr class='metadata-row'>
+  <td><span>7 minutes ago</span></td>
+</tr>
+<tr class='story-row'>
+  <td><a href='https://www.example.com/fallback-post'>Fallback Post</a></td>
+</tr>
+<tr class='metadata-row'>
+  <td><span>8 minutes ago</span></td>
+</tr>
+<tr class='metadata-row'>
+  <td>
+    <a href='https://www.google.com/search?q=example.com'>web</a>
+    <span>9 minutes ago</span>
+  </td>
+</tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>
 `
 
 func captureStdout(t *testing.T, fn func() error) (string, error) {

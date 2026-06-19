@@ -4,17 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"html"
+	htmlstd "html"
 	"io"
 	"math/rand/v2"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	htmlparser "golang.org/x/net/html"
 )
 
 const (
@@ -33,16 +36,9 @@ const (
 var (
 	conf *Conf //nolint:gochecknoglobals
 
-	// Matches a story title row and its following metadata row on /newest.
-	newestStoryRegexp = regexp.MustCompile(
-		`(?is)<tr[^>]*class=['"][^'"]*\bathing\b[^'"]*['"][^>]*>.*?</tr>\s*<tr[^>]*>.*?</tr>`)
-
-	siteRegexp = regexp.MustCompile(
-		`(?is)<span[^>]*class=['"][^'"]*\bsitestr\b[^'"]*['"][^>]*>([^<]+)</span>`)
-
-	// Matches something like "1 minute ago" or "3 hours ago". Note we include
-	// some angle brackets to avoid false positives.
-	timeRegexp = regexp.MustCompile(`(?is)>\s*([1-9]\d*)\s+(\w+)\s+ago\s*<`)
+	// Matches something like "1 minute ago" or "3 hours ago".
+	timeRegexp = regexp.MustCompile(
+		`(?i)\b(\d+)\s+(second|seconds|minute|minutes|hour|hours|day|days|month|months|year|years)\s+ago\b`)
 )
 
 // Conf holds configuration information for the program.
@@ -374,42 +370,46 @@ func parseConfiguredDomains(domain string) []string {
 }
 
 func parseNewestSubmissionDurations(content string, domains []string) (map[string][]time.Duration, error) {
-	domainByNormalized := make(map[string]string, len(domains))
+	configuredDomains := make([]configuredDomain, 0, len(domains))
 	durationsByDomain := make(map[string][]time.Duration, len(domains))
 
 	for _, domain := range domains {
-		domainByNormalized[normalizeDomain(domain)] = domain
+		configuredDomains = append(configuredDomains, configuredDomain{
+			Domain:           domain,
+			NormalizedDomain: normalizeDomain(domain),
+		})
 		durationsByDomain[domain] = nil
 	}
 
-	stories := newestStoryRegexp.FindAllString(content, -1)
-	for _, story := range stories {
-		siteMatch := siteRegexp.FindStringSubmatch(story)
-		if siteMatch == nil {
+	doc, err := htmlparser.Parse(strings.NewReader(content))
+	if err != nil {
+		return nil, fmt.Errorf("error while parsing newest page HTML: %w", err)
+	}
+
+	rows := collectTableRows(doc)
+	for i, row := range rows {
+		submissionDomain := extractSubmissionDomain(row)
+		if submissionDomain == "" {
 			continue
 		}
 
-		domain, ok := domainByNormalized[normalizeDomain(siteMatch[1])]
+		domain, ok := matchConfiguredDomain(submissionDomain, configuredDomains)
 		if !ok {
 			continue
 		}
 
-		timeMatch := timeRegexp.FindStringSubmatch(story)
-		if timeMatch == nil {
+		duration, foundDuration, err := extractSubmissionDuration(row)
+		if err != nil {
+			return nil, err
+		}
+		if !foundDuration {
+			duration, foundDuration, err = extractDurationFromFollowingRows(rows, i)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if !foundDuration {
 			continue
-		}
-
-		numStr := timeMatch[1]
-		unit := timeMatch[2]
-
-		num, err := strconv.Atoi(numStr)
-		if err != nil {
-			return nil, fmt.Errorf("error while parsing number %d: %w", num, err)
-		}
-
-		duration, err := parseDuration(num, unit)
-		if err != nil {
-			return nil, fmt.Errorf("error while parsing duration: %w", err)
 		}
 
 		durationsByDomain[domain] = append(durationsByDomain[domain], duration)
@@ -418,8 +418,293 @@ func parseNewestSubmissionDurations(content string, domains []string) (map[strin
 	return durationsByDomain, nil
 }
 
+type configuredDomain struct {
+	Domain           string
+	NormalizedDomain string
+}
+
+func collectTableRows(node *htmlparser.Node) []*htmlparser.Node {
+	var rows []*htmlparser.Node
+	var collect func(*htmlparser.Node)
+
+	collect = func(node *htmlparser.Node) {
+		if node.Type == htmlparser.ElementNode &&
+			strings.EqualFold(node.Data, "tr") &&
+			!hasDescendantElement(node, "tr") {
+			rows = append(rows, node)
+		}
+
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			collect(child)
+		}
+	}
+
+	collect(node)
+
+	return rows
+}
+
+func hasDescendantElement(node *htmlparser.Node, tag string) bool {
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		if child.Type == htmlparser.ElementNode && strings.EqualFold(child.Data, tag) {
+			return true
+		}
+		if hasDescendantElement(child, tag) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func extractSubmissionDomain(row *htmlparser.Node) string {
+	if siteText := strings.TrimSpace(findFirstTextByClass(row, "sitestr")); siteText != "" {
+		return siteText
+	}
+
+	if fromSiteDomain := findFirstFromSiteDomain(row); fromSiteDomain != "" {
+		return fromSiteDomain
+	}
+
+	_, hasDuration, _ := extractSubmissionDuration(row)
+	if hasDuration {
+		return ""
+	}
+
+	return findFirstExternalLinkDomain(row)
+}
+
+func extractDurationFromFollowingRows(rows []*htmlparser.Node, rowIndex int) (time.Duration, bool, error) {
+	const maxRowsToScan = 3
+
+	for i := rowIndex + 1; i < len(rows) && i <= rowIndex+maxRowsToScan; i++ {
+		row := rows[i]
+		if extractSubmissionDomain(row) != "" {
+			break
+		}
+
+		duration, ok, err := extractSubmissionDuration(row)
+		if err != nil {
+			return 0, false, err
+		}
+		if ok {
+			return duration, true, nil
+		}
+	}
+
+	return 0, false, nil
+}
+
+func extractSubmissionDuration(node *htmlparser.Node) (time.Duration, bool, error) {
+	timeMatch := timeRegexp.FindStringSubmatch(textContent(node))
+	if timeMatch == nil {
+		return 0, false, nil
+	}
+
+	num, err := strconv.Atoi(timeMatch[1])
+	if err != nil {
+		return 0, false, fmt.Errorf("error while parsing number %q: %w", timeMatch[1], err)
+	}
+
+	duration, err := parseDuration(num, timeMatch[2])
+	if err != nil {
+		return 0, false, fmt.Errorf("error while parsing duration: %w", err)
+	}
+
+	return duration, true, nil
+}
+
+func findFirstTextByClass(node *htmlparser.Node, class string) string {
+	var result string
+	var find func(*htmlparser.Node) bool
+
+	find = func(node *htmlparser.Node) bool {
+		if node.Type == htmlparser.ElementNode && hasClass(node, class) {
+			result = textContent(node)
+			return true
+		}
+
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if find(child) {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	find(node)
+
+	return result
+}
+
+func findFirstFromSiteDomain(node *htmlparser.Node) string {
+	var result string
+	var find func(*htmlparser.Node) bool
+
+	find = func(node *htmlparser.Node) bool {
+		if node.Type == htmlparser.ElementNode && strings.EqualFold(node.Data, "a") {
+			if domain := domainFromFromSiteHref(attrValue(node, "href")); domain != "" {
+				result = domain
+				return true
+			}
+		}
+
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if find(child) {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	find(node)
+
+	return result
+}
+
+func findFirstExternalLinkDomain(node *htmlparser.Node) string {
+	var result string
+	var find func(*htmlparser.Node) bool
+
+	find = func(node *htmlparser.Node) bool {
+		if node.Type == htmlparser.ElementNode && strings.EqualFold(node.Data, "a") {
+			if domain := domainFromExternalHref(attrValue(node, "href")); domain != "" {
+				result = domain
+				return true
+			}
+		}
+
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if find(child) {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	find(node)
+
+	return result
+}
+
+func textContent(node *htmlparser.Node) string {
+	var builder strings.Builder
+	var collect func(*htmlparser.Node)
+
+	collect = func(node *htmlparser.Node) {
+		if node.Type == htmlparser.TextNode {
+			if builder.Len() > 0 {
+				builder.WriteByte(' ')
+			}
+			builder.WriteString(node.Data)
+		}
+
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			collect(child)
+		}
+	}
+
+	collect(node)
+
+	return strings.Join(strings.Fields(builder.String()), " ")
+}
+
+func hasClass(node *htmlparser.Node, class string) bool {
+	for _, nodeClass := range strings.Fields(attrValue(node, "class")) {
+		if nodeClass == class {
+			return true
+		}
+	}
+
+	return false
+}
+
+func attrValue(node *htmlparser.Node, name string) string {
+	for _, attr := range node.Attr {
+		if strings.EqualFold(attr.Key, name) {
+			return attr.Val
+		}
+	}
+
+	return ""
+}
+
+func domainFromFromSiteHref(rawHref string) string {
+	rawHref = strings.TrimSpace(htmlstd.UnescapeString(rawHref))
+	if rawHref == "" {
+		return ""
+	}
+
+	parsedURL, err := url.Parse(rawHref)
+	if err != nil {
+		return ""
+	}
+
+	if parsedURL.Path != "from" && !strings.HasSuffix(parsedURL.Path, "/from") {
+		return ""
+	}
+
+	return parsedURL.Query().Get("site")
+}
+
+func domainFromExternalHref(rawHref string) string {
+	rawHref = strings.TrimSpace(htmlstd.UnescapeString(rawHref))
+	if rawHref == "" {
+		return ""
+	}
+
+	parsedURL, err := url.Parse(rawHref)
+	if err != nil {
+		return ""
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return ""
+	}
+	if parsedURL.Host == "" || isHackerNewsHost(parsedURL.Hostname()) {
+		return ""
+	}
+
+	return parsedURL.Hostname()
+}
+
+func isHackerNewsHost(host string) bool {
+	host = normalizeDomain(host)
+	return host == "news.ycombinator.com" || strings.HasSuffix(host, ".news.ycombinator.com")
+}
+
+func matchConfiguredDomain(domain string, configuredDomains []configuredDomain) (string, bool) {
+	normalizedDomain := normalizeDomain(domain)
+
+	for _, configuredDomain := range configuredDomains {
+		if normalizedDomain == configuredDomain.NormalizedDomain ||
+			strings.HasSuffix(normalizedDomain, "."+configuredDomain.NormalizedDomain) {
+			return configuredDomain.Domain, true
+		}
+	}
+
+	return "", false
+}
+
 func normalizeDomain(domain string) string {
-	return strings.ToLower(strings.TrimSpace(html.UnescapeString(domain)))
+	domain = strings.TrimSpace(htmlstd.UnescapeString(domain))
+	if domain == "" {
+		return ""
+	}
+
+	if strings.Contains(domain, "://") {
+		if parsedURL, err := url.Parse(domain); err == nil && parsedURL.Hostname() != "" {
+			domain = parsedURL.Hostname()
+		}
+	}
+
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	domain = strings.TrimSuffix(domain, ".")
+	domain = strings.TrimPrefix(domain, "www.")
+
+	return domain
 }
 
 func sendDomainMessage(ctx context.Context, domain string) error {
