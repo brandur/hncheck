@@ -1,8 +1,8 @@
 # hncheck [![Build Status](https://github.com/brandur/hncheck/workflows/hncheck%20CI/badge.svg)](https://github.com/brandur/hncheck/actions)
 
-A very simple app that checks to see if something under one
-of your domains has been submitted to HN, and emails you if
-it has.
+A very simple app that checks HN's `/newest` page to see if
+something under one of your domains has been submitted, and
+emails you if it has.
 
 ## Setup
 
@@ -18,6 +18,11 @@ cp .env.sample .env
 go install
 forego start hncheck
 ```
+
+By default, `EMAIL_MODE` is `smtp` and `RECIPIENT`, `SMTP_LOGIN`,
+`SMTP_PASSWORD`, `SMTP_PORT`, and `SMTP_SERVER` are required. Set
+`EMAIL_MODE=log` to run without email configuration and print a line when an
+email would've been sent.
 
 ## Tests
 
