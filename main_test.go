@@ -1,9 +1,113 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestGetHTTPDataAccepts2xxStatus(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte("created"))
+	}))
+	defer server.Close()
+
+	respData, err := getHTTPData(context.Background(), server.URL)
+	if err != nil {
+		t.Errorf("Expected not to return an error (was \"%v\").", err)
+	}
+	if string(respData) != "created" {
+		t.Errorf("Expected response data %q to equal %q.", string(respData), "created")
+	}
+}
+
+func TestGetHTTPDataNon2xxIncludesBodySample(t *testing.T) {
+	t.Parallel()
+
+	body := strings.Repeat("a", errorBodyMaxBytes) + "tail"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, body, http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	respData, err := getHTTPData(context.Background(), server.URL)
+	if err == nil {
+		t.Fatal("Expected to return an error.")
+	}
+	if respData != nil {
+		t.Errorf("Expected response data to be nil (was %q).", string(respData))
+	}
+
+	var badStatusErr *BadStatusError
+	if !errors.As(err, &badStatusErr) {
+		t.Fatalf("Expected error to be BadStatusError (was %T).", err)
+	}
+	if badStatusErr.StatusCode != http.StatusInternalServerError {
+		t.Errorf("Expected status code %v to equal %v.",
+			badStatusErr.StatusCode, http.StatusInternalServerError)
+	}
+	if len(badStatusErr.BodySample) != errorBodyMaxBytes {
+		t.Errorf("Expected body sample length %v to equal %v.",
+			len(badStatusErr.BodySample), errorBodyMaxBytes)
+	}
+	if !badStatusErr.BodyTruncated {
+		t.Error("Expected body sample to be marked as truncated.")
+	}
+	if strings.Contains(err.Error(), "tail") {
+		t.Errorf("Expected error not to include body content beyond sample limit (was %q).", err.Error())
+	}
+	if !strings.Contains(err.Error(), "response body sample") {
+		t.Errorf("Expected error to include response body sample (was %q).", err.Error())
+	}
+}
+
+func TestGetHTTPData429IncludesRateLimitHeaders(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-RateLimit-Limit", "60")
+		w.Header().Set("X-RateLimit-Remaining", "0")
+		w.Header().Set("X-RateLimit-Reset", "1712345678")
+		http.Error(w, "slow down", http.StatusTooManyRequests)
+	}))
+	defer server.Close()
+
+	_, err := getHTTPData(context.Background(), server.URL)
+	if err == nil {
+		t.Fatal("Expected to return an error.")
+	}
+
+	for _, expected := range []string{
+		"X-RateLimit-Limit=60",
+		"X-RateLimit-Remaining=0",
+		"X-RateLimit-Reset=1712345678",
+	} {
+		if !strings.Contains(err.Error(), expected) {
+			t.Errorf("Expected error to include %q (was %q).", expected, err.Error())
+		}
+	}
+}
+
+func TestExitStatusForCheckError(t *testing.T) {
+	t.Parallel()
+
+	err := &BadStatusError{URL: "https://example.com", StatusCode: http.StatusTooManyRequests}
+	if exitStatus := exitStatusForCheckError(err); exitStatus != 1 {
+		t.Errorf("Expected exit status %v to equal 1.", exitStatus)
+	}
+
+	wrappedErr := errors.New("some other error")
+	if exitStatus := exitStatusForCheckError(wrappedErr); exitStatus != 0 {
+		t.Errorf("Expected exit status %v to equal 0.", exitStatus)
+	}
+}
 
 func TestParseDuration(t *testing.T) {
 	t.Parallel()

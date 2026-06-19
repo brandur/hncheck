@@ -10,14 +10,16 @@ import (
 	"net/smtp"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	alertPeriod = 20 * time.Minute
-	hnDomainURL = "https://news.ycombinator.com/from?site=%s"
+	alertPeriod       = 20 * time.Minute
+	errorBodyMaxBytes = 4 * 1024
+	hnDomainURL       = "https://news.ycombinator.com/from?site=%s"
 )
 
 var (
@@ -69,6 +71,9 @@ func main() {
 			err = checkDomains(ctx)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "%s\n", err)
+				if exitStatus := exitStatusForCheckError(err); exitStatus != 0 {
+					os.Exit(exitStatus)
+				}
 				goto wait
 			}
 
@@ -136,8 +141,19 @@ func getHTTPData(ctx context.Context, url string) ([]byte, error) {
 	}
 	defer resp.Body.Close() //nolint:errcheck
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("bad status while requesting %q: %v", url, resp.StatusCode)
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		bodySample, bodyTruncated, bodyReadErr := readBodySample(resp.Body, errorBodyMaxBytes)
+		err := &BadStatusError{
+			URL:                url,
+			Status:             resp.Status,
+			StatusCode:         resp.StatusCode,
+			BodySample:         bodySample,
+			BodyTruncated:      bodyTruncated,
+			BodyReadErr:        bodyReadErr,
+			RateLimitHeaders:   rateLimitHeaders(resp.Header, resp.StatusCode),
+			BodySampleMaxBytes: errorBodyMaxBytes,
+		}
+		return nil, err
 	}
 
 	respBytes, err := io.ReadAll(resp.Body)
@@ -146,6 +162,88 @@ func getHTTPData(ctx context.Context, url string) ([]byte, error) {
 	}
 
 	return respBytes, nil
+}
+
+type BadStatusError struct {
+	URL                string
+	Status             string
+	StatusCode         int
+	BodySample         string
+	BodyTruncated      bool
+	BodyReadErr        error
+	RateLimitHeaders   []string
+	BodySampleMaxBytes int
+}
+
+func (e *BadStatusError) Error() string {
+	status := e.Status
+	if status == "" {
+		status = strconv.Itoa(e.StatusCode)
+	}
+
+	msg := fmt.Sprintf("bad status while requesting %q: %s", e.URL, status)
+
+	if e.BodyReadErr != nil {
+		msg += fmt.Sprintf("; error while reading response body: %v", e.BodyReadErr)
+	} else if e.BodySample != "" {
+		if e.BodyTruncated {
+			msg += fmt.Sprintf("; response body sample (truncated to %d bytes): %q",
+				e.BodySampleMaxBytes, e.BodySample)
+		} else {
+			msg += fmt.Sprintf("; response body: %q", e.BodySample)
+		}
+	}
+
+	if len(e.RateLimitHeaders) > 0 {
+		msg += "; rate limit headers: " + strings.Join(e.RateLimitHeaders, ", ")
+	}
+
+	return msg
+}
+
+func exitStatusForCheckError(err error) int {
+	var badStatusErr *BadStatusError
+	if errors.As(err, &badStatusErr) {
+		return 1
+	}
+
+	return 0
+}
+
+func rateLimitHeaders(header http.Header, statusCode int) []string {
+	if statusCode != http.StatusTooManyRequests {
+		return nil
+	}
+
+	const rateLimitHeaderPrefix = "x-ratelimit-"
+
+	headers := make([]string, 0)
+	for name, values := range header {
+		lowerName := strings.ToLower(name)
+		if !strings.HasPrefix(lowerName, rateLimitHeaderPrefix) {
+			continue
+		}
+
+		displayName := "X-RateLimit-" + name[len(rateLimitHeaderPrefix):]
+		headers = append(headers, fmt.Sprintf("%s=%s", displayName, strings.Join(values, ", ")))
+	}
+
+	sort.Strings(headers)
+	return headers
+}
+
+func readBodySample(body io.Reader, maxBytes int) (string, bool, error) {
+	bodySample, err := io.ReadAll(io.LimitReader(body, int64(maxBytes)+1))
+	if err != nil {
+		return "", false, err
+	}
+
+	truncated := len(bodySample) > maxBytes
+	if truncated {
+		bodySample = bodySample[:maxBytes]
+	}
+
+	return strings.TrimSpace(string(bodySample)), truncated, nil
 }
 
 type MissingEnvError struct {
