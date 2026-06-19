@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -150,7 +151,7 @@ func getHTTPData(ctx context.Context, url string) ([]byte, error) {
 	// Gosec flags this with "G704: SSRF via taint analysis", but neither its
 	// error or website provides even a whiff of what it means by this or a
 	// suggested remediation.
-	resp, err := http.DefaultClient.Do(req) //nolint:gosec
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("error while requesting %q: %w", url, err)
 	}
@@ -613,13 +614,7 @@ func textContent(node *htmlparser.Node) string {
 }
 
 func hasClass(node *htmlparser.Node, class string) bool {
-	for _, nodeClass := range strings.Fields(attrValue(node, "class")) {
-		if nodeClass == class {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(strings.Fields(attrValue(node, "class")), class)
 }
 
 func attrValue(node *htmlparser.Node, name string) string {

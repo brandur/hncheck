@@ -75,9 +75,9 @@ func TestGetHTTPData429IncludesRateLimitHeaders(t *testing.T) {
 	t.Parallel()
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("X-RateLimit-Limit", "60")
-		w.Header().Set("X-RateLimit-Remaining", "0")
-		w.Header().Set("X-RateLimit-Reset", "1712345678")
+		w.Header().Set("X-Ratelimit-Limit", "60")
+		w.Header().Set("X-Ratelimit-Remaining", "0")
+		w.Header().Set("X-Ratelimit-Reset", "1712345678")
 		http.Error(w, "slow down", http.StatusTooManyRequests)
 	}))
 	defer server.Close()
@@ -112,6 +112,7 @@ func TestExitStatusForCheckError(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // Mutates package globals and http.DefaultTransport.
 func TestCheckDomainsRequestsNewestOnceForMultipleDomains(t *testing.T) {
 	oldConf := conf
 	oldTransport := http.DefaultTransport
@@ -197,6 +198,7 @@ func TestParseConfLoopCanBeEnabled(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // Mutates package globals and os.Stdout.
 func TestSendEmailLogModePrintsWouldSendLine(t *testing.T) {
 	oldConf := conf
 	t.Cleanup(func() {
@@ -416,7 +418,7 @@ const newestChangedHTML = `
 </html>
 `
 
-func captureStdout(t *testing.T, fn func() error) (string, error) {
+func captureStdout(t *testing.T, callback func() error) (string, error) {
 	t.Helper()
 
 	oldStdout := os.Stdout
@@ -426,7 +428,7 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	}
 	os.Stdout = w
 
-	fnErr := fn()
+	callbackErr := callback()
 	closeErr := w.Close()
 	os.Stdout = oldStdout
 
@@ -438,7 +440,7 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 		t.Fatalf("Expected to close stdout pipe (was \"%v\").", closeErr)
 	}
 
-	return string(out), fnErr
+	return string(out), callbackErr
 }
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
