@@ -113,7 +113,7 @@ func TestExitStatusForCheckError(t *testing.T) {
 }
 
 func TestParseConfEmailModeLogToleratesMissingEmailConfiguration(t *testing.T) {
-	t.Setenv("DOMAIN", "brandur.org, example.com")
+	t.Setenv("DOMAIN", "wikipedia.org, example.com")
 	t.Setenv("EMAIL_MODE", string(EmailModeLog))
 	t.Setenv("RECIPIENT", "")
 	t.Setenv("SMTP_LOGIN", "")
@@ -131,7 +131,7 @@ func TestParseConfEmailModeLogToleratesMissingEmailConfiguration(t *testing.T) {
 	if conf.Loop {
 		t.Error("Expected loop to be disabled by default.")
 	}
-	expectedDomains := []string{"brandur.org", "example.com"}
+	expectedDomains := []string{"wikipedia.org", "example.com"}
 	if len(conf.Domain) != len(expectedDomains) {
 		t.Fatalf("Expected domain length %v to equal %v.", len(conf.Domain), len(expectedDomains))
 	}
@@ -144,7 +144,7 @@ func TestParseConfEmailModeLogToleratesMissingEmailConfiguration(t *testing.T) {
 }
 
 func TestParseConfLoopCanBeEnabled(t *testing.T) {
-	t.Setenv("DOMAIN", "brandur.org")
+	t.Setenv("DOMAIN", "wikipedia.org")
 	t.Setenv("EMAIL_MODE", string(EmailModeLog))
 	t.Setenv("LOOP", "true")
 
@@ -167,7 +167,7 @@ func TestSendEmailLogModePrintsWouldSendLine(t *testing.T) {
 		EmailMode: EmailModeLog,
 	}
 
-	subject := `New HN submission for "brandur.org"`
+	subject := `New HN submission for "wikipedia.org"`
 	output, err := captureStdout(t, func() error {
 		return sendEmail(context.Background(), subject, "body")
 	})
@@ -218,21 +218,21 @@ func TestParseDuration(t *testing.T) {
 func TestParseNewestSubmissionDurations(t *testing.T) {
 	t.Parallel()
 
-	durationsByDomain, err := parseNewestSubmissionDurations(newestHTML, []string{"brandur.org", "example.com"})
+	durationsByDomain, err := parseNewestSubmissionDurations(newestHTML, []string{"wikipedia.org", "example.com"})
 	if err != nil {
 		t.Errorf("Expected not to return an error (was \"%v\").", err)
 	}
 
-	expectedBrandurDurations := []time.Duration{0 * time.Minute, 2 * time.Hour}
-	brandurDurations := durationsByDomain["brandur.org"]
-	if len(brandurDurations) != len(expectedBrandurDurations) {
-		t.Fatalf("Expected brandur.org durations length %v to equal %v.",
-			len(brandurDurations), len(expectedBrandurDurations))
+	expectedWikipediaDurations := []time.Duration{0 * time.Minute, 2 * time.Hour}
+	wikipediaDurations := durationsByDomain["wikipedia.org"]
+	if len(wikipediaDurations) != len(expectedWikipediaDurations) {
+		t.Fatalf("Expected wikipedia.org durations length %v to equal %v.",
+			len(wikipediaDurations), len(expectedWikipediaDurations))
 	}
-	for i, expectedDuration := range expectedBrandurDurations {
-		if brandurDurations[i] != expectedDuration {
-			t.Errorf("Expected brandur.org durations element (index %v) %v to equal %v.",
-				i, brandurDurations[i], expectedDuration)
+	for i, expectedDuration := range expectedWikipediaDurations {
+		if wikipediaDurations[i] != expectedDuration {
+			t.Errorf("Expected wikipedia.org durations element (index %v) %v to equal %v.",
+				i, wikipediaDurations[i], expectedDuration)
 		}
 	}
 
@@ -254,23 +254,23 @@ func TestParseNewestSubmissionDurationsHandlesMarkupFallbacks(t *testing.T) {
 	t.Parallel()
 
 	durationsByDomain, err := parseNewestSubmissionDurations(newestChangedHTML, []string{
-		"brandur.org",
+		"wikipedia.org",
 		"example.com",
 	})
 	if err != nil {
 		t.Errorf("Expected not to return an error (was \"%v\").", err)
 	}
 
-	expectedBrandurDurations := []time.Duration{7 * time.Minute}
-	brandurDurations := durationsByDomain["brandur.org"]
-	if len(brandurDurations) != len(expectedBrandurDurations) {
-		t.Fatalf("Expected brandur.org durations length %v to equal %v.",
-			len(brandurDurations), len(expectedBrandurDurations))
+	expectedWikipediaDurations := []time.Duration{7 * time.Minute}
+	wikipediaDurations := durationsByDomain["wikipedia.org"]
+	if len(wikipediaDurations) != len(expectedWikipediaDurations) {
+		t.Fatalf("Expected wikipedia.org durations length %v to equal %v.",
+			len(wikipediaDurations), len(expectedWikipediaDurations))
 	}
-	for i, expectedDuration := range expectedBrandurDurations {
-		if brandurDurations[i] != expectedDuration {
-			t.Errorf("Expected brandur.org durations element (index %v) %v to equal %v.",
-				i, brandurDurations[i], expectedDuration)
+	for i, expectedDuration := range expectedWikipediaDurations {
+		if wikipediaDurations[i] != expectedDuration {
+			t.Errorf("Expected wikipedia.org durations element (index %v) %v to equal %v.",
+				i, wikipediaDurations[i], expectedDuration)
 		}
 	}
 
@@ -301,7 +301,7 @@ const newestHTML = `
 <tr><td>
 <table>
 <tr class='athing submission' id='1'>
-  <td class='title'><span class='titleline'><a href='https://brandur.org/new-post'>New Post</a><span class='sitebit comhead'> (<a href='from?site=brandur.org'><span class='sitestr'>brandur.org</span></a>)</span></span></td>
+  <td class='title'><span class='titleline'><a href='https://wikipedia.org/new-post'>New Post</a><span class='sitebit comhead'> (<a href='from?site=wikipedia.org'><span class='sitestr'>wikipedia.org</span></a>)</span></span></td>
 </tr>
 <tr>
   <td colspan='2'></td><td class='subtext'><span class='subline'><span class='age'><a href='item?id=1'>0 minutes ago</a></span></span></td>
@@ -329,7 +329,7 @@ const newestHTML = `
 </tr>
 <tr class='spacer' style='height:5px'></tr>
 <tr class='athing submission' id='5'>
-  <td class='title'><span class='titleline'><a href='https://brandur.org/old-post'>Old Post</a><span class='sitebit comhead'> (<a href='from?site=Brandur.Org'><span class='sitestr'>Brandur.Org</span></a>)</span></span></td>
+  <td class='title'><span class='titleline'><a href='https://wikipedia.org/old-post'>Old Post</a><span class='sitebit comhead'> (<a href='from?site=Wikipedia.Org'><span class='sitestr'>Wikipedia.Org</span></a>)</span></span></td>
 </tr>
 <tr>
   <td colspan='2'></td><td class='subtext'><span class='subline'><span class='age'><a href='item?id=5'>2 hours ago</a></span></span></td>
@@ -350,8 +350,8 @@ const newestChangedHTML = `
 <table>
 <tr class='story-row'>
   <td>
-    <a href='https://docs.brandur.org/new-post'>Docs Post</a>
-    <a href='from?site=docs.brandur.org'><span class='site-domain'>docs.brandur.org</span></a>
+    <a href='https://en.wikipedia.org/new-post'>Docs Post</a>
+    <a href='from?site=en.wikipedia.org'><span class='site-domain'>en.wikipedia.org</span></a>
   </td>
 </tr>
 <tr class='metadata-row'>
