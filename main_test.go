@@ -112,6 +112,46 @@ func TestExitStatusForCheckError(t *testing.T) {
 	}
 }
 
+func TestCheckDomainsRequestsNewestOnceForMultipleDomains(t *testing.T) {
+	oldConf := conf
+	oldTransport := http.DefaultTransport
+	t.Cleanup(func() {
+		conf = oldConf
+		http.DefaultTransport = oldTransport
+	})
+
+	conf = &Conf{
+		Domain:    []string{"wikipedia.org", "example.com"},
+		EmailMode: EmailModeLog,
+	}
+
+	var requestCount int
+	http.DefaultTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		requestCount++
+		if req.URL.String() != hnNewestURL {
+			t.Errorf("Expected request URL %q to equal %q.", req.URL.String(), hnNewestURL)
+		}
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Status:     "200 OK",
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(newestHTML)),
+			Request:    req,
+		}, nil
+	})
+
+	_, err := captureStdout(t, func() error {
+		return checkDomains(context.Background())
+	})
+	if err != nil {
+		t.Errorf("Expected not to return an error (was \"%v\").", err)
+	}
+	if requestCount != 1 {
+		t.Errorf("Expected request count %v to equal %v.", requestCount, 1)
+	}
+}
+
 func TestParseConfEmailModeLogToleratesMissingEmailConfiguration(t *testing.T) {
 	t.Setenv("DOMAIN", "wikipedia.org, example.com")
 	t.Setenv("EMAIL_MODE", string(EmailModeLog))
@@ -399,4 +439,10 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	}
 
 	return string(out), fnErr
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
 }
