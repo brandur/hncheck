@@ -55,7 +55,7 @@ type Conf struct {
 	EmailMode EmailMode
 
 	// Loop determines whether the program runs continuous in a loop. It
-	// defaults to true. If false, it runs once and exits.
+	// defaults to false. If true, it runs continuously.
 	Loop bool
 
 	// Recipient is the email address of the person to be alerted in case a new
@@ -276,7 +276,6 @@ func (e MissingEnvError) Error() string {
 func parseConf() (*Conf, error) {
 	conf := &Conf{
 		EmailMode: EmailModeSMTP,
-		Loop:      true,
 	}
 
 	domain := os.Getenv("DOMAIN")
@@ -289,8 +288,8 @@ func parseConf() (*Conf, error) {
 		return nil, errors.New("need at least one value in: DOMAIN")
 	}
 
-	if os.Getenv("LOOP") == "false" {
-		conf.Loop = false
+	if os.Getenv("LOOP") == "true" {
+		conf.Loop = true
 	}
 
 	switch emailMode := os.Getenv("EMAIL_MODE"); emailMode {

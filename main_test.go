@@ -128,6 +128,9 @@ func TestParseConfEmailModeLogToleratesMissingEmailConfiguration(t *testing.T) {
 	if conf.EmailMode != EmailModeLog {
 		t.Errorf("Expected email mode %q to equal %q.", conf.EmailMode, EmailModeLog)
 	}
+	if conf.Loop {
+		t.Error("Expected loop to be disabled by default.")
+	}
 	expectedDomains := []string{"brandur.org", "example.com"}
 	if len(conf.Domain) != len(expectedDomains) {
 		t.Fatalf("Expected domain length %v to equal %v.", len(conf.Domain), len(expectedDomains))
@@ -137,6 +140,20 @@ func TestParseConfEmailModeLogToleratesMissingEmailConfiguration(t *testing.T) {
 			t.Errorf("Expected domain (index %v) %q to equal %q.",
 				i, conf.Domain[i], expectedDomain)
 		}
+	}
+}
+
+func TestParseConfLoopCanBeEnabled(t *testing.T) {
+	t.Setenv("DOMAIN", "brandur.org")
+	t.Setenv("EMAIL_MODE", string(EmailModeLog))
+	t.Setenv("LOOP", "true")
+
+	conf, err := parseConf()
+	if err != nil {
+		t.Errorf("Expected not to return an error (was \"%v\").", err)
+	}
+	if !conf.Loop {
+		t.Error("Expected loop to be enabled.")
 	}
 }
 

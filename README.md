@@ -24,6 +24,9 @@ By default, `EMAIL_MODE` is `smtp` and `RECIPIENT`, `SMTP_LOGIN`,
 `EMAIL_MODE=log` to run without email configuration and print a line when an
 email would've been sent.
 
+By default, hncheck runs once and exits. Set `LOOP=true` to keep checking
+continuously.
+
 ## Tests
 
 Run the test suite:
